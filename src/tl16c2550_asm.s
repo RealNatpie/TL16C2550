@@ -13,18 +13,18 @@
 ; Fast character output routine
 ; void __fastcall__ uart_putc_fast(char c);
 ; Input: A = character to send
-;        X/Y = uart_base (low/high)
+; Note: Uses UART_BASE_A (hardcoded for performance)
 ;---------------------------------------------------------------------------
 .proc _uart_putc_fast
     pha                     ; Save character
     
 @wait:
-    lda UART_BASE_A + 5     ; Read LSR (Line Status Register)
-    and #$20                ; Check THR empty bit
-    beq @wait               ; Wait if not ready
+    lda UART_BASE_A + UART_LSR  ; Read LSR (Line Status Register)
+    and #LSR_THR_EMPTY          ; Check THR empty bit
+    beq @wait                   ; Wait if not ready
     
-    pla                     ; Restore character
-    sta UART_BASE_A         ; Write to THR
+    pla                         ; Restore character
+    sta UART_BASE_A + UART_THR  ; Write to THR
     rts
 .endproc
 
@@ -35,10 +35,10 @@
 ;---------------------------------------------------------------------------
 .proc _uart_getc_fast
 @wait:
-    lda UART_BASE_A + 5     ; Read LSR
-    and #$01                ; Check data ready bit
-    beq @wait               ; Wait if no data
+    lda UART_BASE_A + UART_LSR  ; Read LSR
+    and #LSR_DATA_READY         ; Check data ready bit
+    beq @wait                   ; Wait if no data
     
-    lda UART_BASE_A         ; Read RBR
+    lda UART_BASE_A + UART_RBR  ; Read RBR
     rts
 .endproc
