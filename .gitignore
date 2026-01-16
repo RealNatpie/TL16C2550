@@ -7,6 +7,9 @@
 *.obj
 *.elf
 
+# cc65 intermediate files
+*.s
+
 # Linker output
 *.ilk
 *.map
@@ -21,6 +24,13 @@
 *.a
 *.la
 *.lo
+
+# Build directories - ignore contents but keep directories
+obj/*
+!obj/.gitkeep
+lib/*
+!lib/.gitkeep
+dist/
 
 # Shared objects (inc. Windows DLLs)
 *.dll
