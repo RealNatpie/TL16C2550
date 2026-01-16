@@ -5,6 +5,11 @@
 
 #include "tl16c2550.h"
 
+/* NULL pointer definition if not already defined */
+#ifndef NULL
+#define NULL ((void*)0)
+#endif
+
 /* UART register base address - adjust for your hardware */
 #define UART_BASE 0x9F60
 
@@ -44,7 +49,7 @@ unsigned char uart_putc(unsigned char data)
 
 unsigned char uart_getc(unsigned char *data)
 {
-    if (data == 0) {
+    if (data == NULL) {
         return 1; /* Error: NULL pointer */
     }
     
