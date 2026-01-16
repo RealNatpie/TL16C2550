@@ -12,7 +12,9 @@ TL16C2550/
 ├── obj/             # Object files (generated)
 ├── lib/             # Library output (generated)
 │   └── tl16c2550.lib
-└── Makefile         # Build system
+├── Makefile         # Build system
+├── BUILD.md         # Detailed build documentation
+└── example.c        # Example usage
 ```
 
 ## Building
@@ -46,6 +48,8 @@ make install INSTALL_DIR=/path/to/install
 make help
 ```
 
+For detailed build system documentation, see [BUILD.md](BUILD.md).
+
 ## Using the Library
 
 1. Build the library: `make`
@@ -54,6 +58,8 @@ make help
 4. Link against the library: `tl16c2550.lib`
 
 ### Example
+
+See [example.c](example.c) for a complete example. Basic usage:
 
 ```c
 #include "tl16c2550.h"
