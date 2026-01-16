@@ -53,3 +53,11 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Build directory
+build/
+
+# Intermediate assembly files from cc65 (but not source .s files)
+# Keep source assembly files in src/
+!src/*.s
+*.s
