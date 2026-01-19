@@ -1,8 +1,37 @@
 # TL16C2550
 Serial Drivers for Commander X16 devices using the TL16C2550 and Compatible UARTS
 
+## ⚠️ Work in Progress
+This project is currently under active development with significant functionality still to be implemented. The API is not yet stable and may change.
+
 ## Overview
 This library provides serial communication support for the Commander X16 computer using the TL16C2550 dual UART chip. It is designed to be compiled with the cc65 cross-compiler toolchain.
+
+## Current Status
+Currently implemented:
+- **Data Structures**: UART_Instance struct with full field definitions
+- **UART Creation**:
+  - `createUART()` - Public wrapper function that calculates divisor from baud rate
+  - `createUARTWithDivisor()` - Internal function for creating UART with explicit divisor
+  - `findDivisor()` - Calculates baud rate divisor from crystal clock and desired rate
+- **Device Discovery**: `scanUARTs()` - Detects UART devices at known addresses
+- **Global Management**:
+  - `uart_instances[]` - Global array for storing up to 20 UART instance pointers
+  - `uart_instance_count` - Tracks active UART instances
+- **Assembly Functions**:
+  - `_addUART()` - Adds UART instance to global array and performs hardware initialization
+- **Documentation**:
+  - UART_Instance structure field offsets (for assembly access)
+  - Buffer status bitmap definitions (EMPTY, FULL, WRAPPED)
+  - Line Status Register (LSR) bit definitions with descriptions
+
+Still to be implemented:
+- Complete hardware initialization in `_addUART()` (baud rate, line control, interrupts)
+- Interrupt handling infrastructure
+- Data transmission and reception routines
+- Circular buffer read/write operations
+- Error handling and status reporting
+- Example code and API documentation
 
 ## Building
 
@@ -35,18 +64,5 @@ To remove all build artifacts:
 make clean
 ```
 
-## Usage
-To use this library in your Commander X16 project:
-
-1. Include the header file in your C code:
-```c
-#include "tl16c2550.h"
-```
-
-2. Link against the library when building your project:
-```bash
-cl65 -t cx16 -o myprogram.prg myprogram.c -L./build -ltl16c2550
-```
-
 ## API
-See `include/tl16c2550.h` for the complete API documentation.
+See `include/tl16c2550.h` for available functions and data structures. Note that the API is still under development and subject to change.

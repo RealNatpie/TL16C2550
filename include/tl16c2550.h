@@ -9,11 +9,96 @@
 #ifndef TL16C2550_H
 #define TL16C2550_H
 
-#include <stdint.h>
+
+
+/* NULL definition */
+#ifndef NULL
+#define NULL ((void*)0)
+#endif
+
+/* Baud rate enum */
+typedef enum {
+    BR_50,
+    BR_300,
+    BR_600,
+    BR_1200,
+    BR_2400,
+    BR_4800,
+    BR_9600,
+    BR_19200,
+    BR_38400,
+    BR_57600,
+    BR_115200,
+    BR_230400,
+    BR_460800,
+    BR_921600,
+    BR_CUSTOM
+} BaudRate;
+
+/* Parity enum */
+typedef enum {
+    PARITY_NONE,
+    PARITY_ODD,
+    PARITY_EVEN
+} Parity;
+
+/* UART Instance structure for managing multiple UART ports */
+typedef struct {
+    unsigned int base_address;           /* Base address of the UART */
+    unsigned char *input_buffer;           /* Pointer to input (receive) buffer */
+    unsigned char in_buffer_status;          /* Status of the buffer (e.g., full, empty) */
+    unsigned char *output_buffer;          /* Pointer to output (transmit) buffer */
+    unsigned char out_buffer_status;         /* Status of the buffer (e.g., full, empty) */
+    unsigned char input_head;              /* Head offset for input buffer */
+    unsigned char input_tail;              /* Tail offset for input buffer */
+    unsigned char output_head;             /* Head offset for output buffer */
+    unsigned char output_tail;             /* Tail offset for output buffer */
+    unsigned long crystal_speed;          /* Crystal clock speed divided by 16 */
+    unsigned int divisor;                /* Baud rate divisor value */
+    BaudRate baudrate;               /* Current baud rate setting */
+    unsigned custom_baudrate;        /* Custom baud rate value */
+    unsigned char lcr;                     /* Line Control Register (word length, stop bits, parity) */
+} UART_Instance;
+
+
 
 /* UART Base Addresses for Commander X16 */
-#define UART_BASE_A   0x9F60
-#define UART_BASE_B   0x9F68
+/* $9F60 through $9FF8 are posible locations seperate by 8 bytes */
+#define UART_BASE   0x9F60
+#define UART_OFSETS 0x08
+
+/* Maximum number of UART instances */
+#define MAX_UARTS   20
+
+/* UART buffer size (256 bytes for 8-bit circular buffer) */
+#define UART_BUFFER_SIZE 256
+
+/* Clock constants for various UART cards (already divided by 16 for divisor calculation) */
+
+/* Texelec Commander X16 Serial Card: 921.6 kHz (14.7456 MHz / 16) */
+#define TEXELEC_X16_UART_CLOCK 921600
+
+/* Texelec Commander X16 Dual MIDI Card: 1 MHz (16 MHz / 16) */
+#define TEXELEC_X16_DUAL_MIDI_UART_CLOCK 1000000
+
+/* Default divisor for Dual MIDI at 31250 bps (MIDI standard): 1000000 / 31250 = 32 */
+#define TEXELEC_X16_DUAL_MIDI_DEFAULT_DIVISOR 32
+
+/* Standard baud rate constants */
+#define BAUD_50     50
+#define BAUD_300    300
+#define BAUD_600    600
+#define BAUD_1200   1200
+#define BAUD_2400   2400
+#define BAUD_4800   4800
+#define BAUD_9600   9600
+#define BAUD_19200  19200
+#define BAUD_38400  38400
+#define BAUD_57600  57600
+#define BAUD_115200 115200
+#define BAUD_230400 230400
+#define BAUD_460800 460800
+#define BAUD_921600 921600
 
 /* Register Offsets */
 #define UART_RBR      0  /* Receiver Buffer Register (read) */
@@ -38,38 +123,70 @@
 #define LSR_FIFO_ERR      0x80
 
 /**
- * Initialize the specified UART
- * @param uart_base Base address of UART (UART_BASE_A or UART_BASE_B)
+ * Calculate UART divisor from crystal clock and desired baud rate
+ * @param crystal_clock Crystal clock speed (already divided by 16)
  * @param baud_rate Desired baud rate
+ * @return 16-bit divisor value (crystal_clock / baud_rate)
  */
-void uart_init(uint16_t uart_base, uint32_t baud_rate);
+unsigned int findDivisor(unsigned long crystal_clock, unsigned long baud_rate);
 
 /**
- * Send a character via UART
- * @param uart_base Base address of UART
- * @param c Character to send
+ * Create and initialize a UART instance (calculates divisor from baud rate)
+ * @param crystal_speed Crystal clock speed (already divided by 16)
+ * @param baudrate Desired baud rate (numeric value, e.g., 9600, 115200)
+ * @param base_address Base address of the UART hardware
+ * @param databits Number of data bits (5, 6, 7, or 8)
+ * @param parity Parity setting (PARITY_NONE, PARITY_ODD, or PARITY_EVEN)
+ * @param stop_bits Number of stop bits (1 or 2)
+ * @return Pointer to created UART_Instance, or NULL on failure
  */
-void uart_putc(uint16_t uart_base, char c);
+UART_Instance* createUART(unsigned long crystal_speed, unsigned long baudrate, unsigned int base_address, unsigned char databits, Parity parity, unsigned char stop_bits);
 
 /**
- * Receive a character from UART
- * @param uart_base Base address of UART
- * @return Received character
+ * Create and initialize a UART instance (with explicit divisor)
+ * @param crystal_speed Crystal clock speed (already divided by 16)
+ * @param baudrate Desired baud rate (numeric value, e.g., 9600, 115200)
+ * @param divisor Pre-calculated baud rate divisor
+ * @param base_address Base address of the UART hardware
+ * @param databits Number of data bits (5, 6, 7, or 8)
+ * @param parity Parity setting (PARITY_NONE, PARITY_ODD, or PARITY_EVEN)
+ * @param stop_bits Number of stop bits (1 or 2)
+ * @return Pointer to created UART_Instance, or NULL on failure
  */
-char uart_getc(uint16_t uart_base);
+UART_Instance* createUARTWithDivisor(unsigned long crystal_speed, unsigned long baudrate, unsigned int divisor, unsigned int base_address, unsigned char databits, Parity parity, unsigned char stop_bits);
 
 /**
- * Check if data is available to read
- * @param uart_base Base address of UART
- * @return Non-zero if data available
+ * Scan for UART devices at known base addresses
+ * Tests the scratch register at each possible UART address from 0x9F60 to 0x9FF8
+ * @param addresses Pointer to a buffer to store found UART addresses (at least 20 uint16_t entries)
+ * @return Number of UARTs found
  */
-uint8_t uart_data_ready(uint16_t uart_base);
+unsigned char __fastcall__ scanUARTs(unsigned int *addresses);
 
 /**
- * Check if transmitter is ready
- * @param uart_base Base address of UART
- * @return Non-zero if ready to transmit
+ * Global array of UART instance pointers
+ * Each element points to a UART_Instance structure
  */
-uint8_t uart_tx_ready(uint16_t uart_base);
+extern UART_Instance *uart_instances[MAX_UARTS];
 
+/**
+ * Current count of active UART instances
+ */
+extern unsigned char uart_instance_count;
+
+/**
+ * Flag indicating if custom IRQ handler is installed
+ * 1 = IRQ handler active, 0 = not active
+ */
+extern unsigned char irq_handler_active;
+
+/**
+ * Library test function
+ * Adds 5 to the input value
+ * @param value Input unsigned char value
+ * @return value + 5
+ */
+unsigned char __fastcall__ libtest(unsigned char value);
+
+unsigned char __fastcall__ addUART(UART_Instance* uart);
 #endif /* TL16C2550_H */

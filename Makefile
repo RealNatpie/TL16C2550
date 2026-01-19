@@ -1,8 +1,25 @@
 # Makefile for TL16C2550 Serial Library (Commander X16)
 # Requires cc65 cross compiler toolchain
 
+# Detect operating system
+ifeq ($(OS),Windows_NT)
+    # Windows commands
+    RM = del /Q
+    RMDIR = rmdir /S /Q
+    MKDIR = if not exist
+    CP = copy /Y
+    FIXPATH = $(subst /,\,$1)
+else
+    # Unix/Linux/Mac commands
+    RM = rm -f
+    RMDIR = rm -rf
+    MKDIR = mkdir -p
+    CP = cp
+    FIXPATH = $1
+endif
+
 # Tool definitions
-CC = cc65
+CC = cl65
 AS = ca65
 AR = ar65
 LD = ld65
@@ -16,7 +33,7 @@ INC_DIR = include
 BUILD_DIR = build
 
 # Compiler flags
-CFLAGS = -t $(TARGET) -O -I $(INC_DIR)
+CFLAGS = -t $(TARGET) -c -O -I $(INC_DIR)
 ASFLAGS = -t $(TARGET) -I $(INC_DIR)
 
 # Source files
@@ -32,23 +49,35 @@ ALL_OBJECTS = $(C_OBJECTS) $(ASM_OBJECTS)
 HEADERS = $(wildcard $(INC_DIR)/*.h) $(wildcard $(INC_DIR)/*.inc)
 
 # Library name
-LIBRARY = $(BUILD_DIR)/libtl16c2550.a
+LIBRARY = $(BUILD_DIR)/tl16c2550.lib
+
+# Examples directory
+EXAMPLES_DIR = examples
+BUILD_EXAMPLES_DIR = $(BUILD_DIR)/$(EXAMPLES_DIR)
+
+# Example programs
+EXAMPLE_SOURCES = $(wildcard $(EXAMPLES_DIR)/*.c)
+EXAMPLE_PROGRAMS = $(patsubst $(EXAMPLES_DIR)/%.c,$(BUILD_EXAMPLES_DIR)/%.prg,$(EXAMPLE_SOURCES))
 
 # Default target
-all: $(BUILD_DIR) $(LIBRARY) copy-headers
+all: $(BUILD_DIR) $(LIBRARY) copy-headers examples
 
 # Create build directory
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+	$(MKDIR) $(call FIXPATH,$(BUILD_DIR))
+
+# Create build examples directory
+$(BUILD_EXAMPLES_DIR): $(BUILD_DIR)
+	$(MKDIR) $(call FIXPATH,$(BUILD_EXAMPLES_DIR))
 
 # Build library from object files
 $(LIBRARY): $(ALL_OBJECTS)
 	$(AR) a $@ $^
+	$(RM) $(ALL_OBJECTS)
 
 # Compile C source files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS)
-	$(CC) $(CFLAGS) -o $(BUILD_DIR)/$*.s $<
-	$(AS) $(ASFLAGS) -o $@ $(BUILD_DIR)/$*.s
+	$(CC) $(CFLAGS) -o $@ $<
 
 # Assemble assembly source files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.s $(HEADERS)
@@ -56,8 +85,19 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.s $(HEADERS)
 
 # Copy header files to build directory
 copy-headers: $(BUILD_DIR)
-	cp $(INC_DIR)/*.h $(BUILD_DIR)/ 2>/dev/null || true
-	cp $(INC_DIR)/*.inc $(BUILD_DIR)/ 2>/dev/null || true
+ifeq ($(OS),Windows_NT)
+	-$(CP) $(call FIXPATH,$(INC_DIR)\*.h) $(call FIXPATH,$(BUILD_DIR)\ )
+	-$(CP) $(call FIXPATH,$(INC_DIR)\*.inc) $(call FIXPATH,$(BUILD_DIR)\ )
+else
+	-$(CP) $(INC_DIR)/*.h $(BUILD_DIR)/
+	-$(CP) $(INC_DIR)/*.inc $(BUILD_DIR)/
+endif
+
+# Build example programs
+examples: $(BUILD_EXAMPLES_DIR) $(LIBRARY) $(EXAMPLE_PROGRAMS)
+
+$(BUILD_EXAMPLES_DIR)/%.prg: $(EXAMPLES_DIR)/%.c $(LIBRARY) $(HEADERS)
+	$(CC) -t $(TARGET) -I $(INC_DIR) $< $(LIBRARY) -o $@
 
 # Clean build artifacts
 clean:
@@ -72,7 +112,8 @@ help:
 	@echo "TL16C2550 Serial Library Makefile"
 	@echo "=================================="
 	@echo "Targets:"
-	@echo "  all          - Build library and copy headers (default)"
+	@echo "  all          - Build library, copy headers, and compile examples (default)"
+	@echo "  examples     - Compile example programs to build/examples/"
 	@echo "  clean        - Remove build artifacts"
 	@echo "  help         - Display this help message"
 	@echo ""

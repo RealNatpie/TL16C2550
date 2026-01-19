@@ -7,16 +7,14 @@
 ;---------------------------------------------------------------------------
 
 .export _scanUARTs         ; Scan for UART devices
-.export _libtest            ; Library test function
 .export _irq_handler_active ; Flag indicating if IRQ handler is installed
-.export _addUART          ; Add a UART instance to the global list  
+
 ;---------------------------------------------------------------------------
 ; Imported variables (defined in C, used in assembly)
 ;---------------------------------------------------------------------------
 .import _uart_instances     ; Array of UART_Instance pointers
 .import _uart_instance_count ; Count of active UART instances
-;.import chrout              ; KERNAL routine to output character
-;.importzp _sp
+.importzp _sp
 .include "zeropage.inc"
 .include "tl16c2550.inc"
 .include "cx16.inc"
@@ -33,19 +31,18 @@
     sta ptr1            ; Store buffer pointer (low byte in ptr1)
     stx ptr1+1          ; Store buffer pointer (high byte in ptr1+1)
     
-    lda #<UART_BASE     ; Start address low byte
+    lda #$00            ; Start address low byte (0x9F60 & 0xFF = 0x60)
     sta ptr2            ; Store in address working variable (zero page pointer)
-    lda #>UART_BASE     ; Start address high byte
+    lda #$9F            ; Start address high byte
     sta ptr2+1          ; Store in address working variable (zero page pointer)
     
-    stz tmp1     ; Initialize found count (tmp1) to 0
+    lda #$00            ; Counter for found UARTs
+    sta found_count     ; Initialize count
     
     lda #20             ; Loop 20 times (addresses from 9F60 to 9FF8)
-    sta tmp2      ; Initialize loop counter (tmp2)
+    sta loop_count      ; Initialize loop counter
     
 @scan_loop:
-    ;lda #'%'
-    ;jsr $FFD2         ; Debug: Output '%' character to indicate scanning
     ; Write test value to scratch register (offset 7)
     lda #$A5            ; Test pattern (10100101)
     ldy #7              ; Offset to scratch register
@@ -57,10 +54,7 @@
     bne @skip_address   ; If not equal, skip this address
     
     ; Found a UART! Store the address
-    ;lda #'#'            ; Debug: Load '#' character
-    ;jsr $FFD2         ; Debug: Output character
-    
-    lda tmp1     ; Get current found count (tmp1)
+    lda found_count     ; Get current count
     asl                 ; Multiply by 2 for 16-bit address storage
     tay                 ; Use as index into buffer
     
@@ -71,36 +65,19 @@
     lda ptr2+1          ; Get high byte of address
     sta (ptr1),y        ; Store in buffer
     
-    inc tmp1     ; Increment found count (tmp1)
+    inc found_count     ; Increment found count
     
 @skip_address:
     ; Move to next address (add UART_OFFSET)
     lda ptr2
     clc
-    adc #UART_OFFSETS    ; Add offset (0x08)
+    adc UART_OFSETS    ; Add offset (0x08)
     sta ptr2
     
-    dec tmp2      ; Decrement loop counter (tmp2)
-    beq @done           ; Short branch if done
-    jmp @scan_loop      ; Jump back (too far for short branch)
+    dec loop_count      ; Decrement loop counter
+    bne @scan_loop      ; Continue if more addresses to check
     
-@done:    
-    lda tmp1     ; Return the count of found UARTs (tmp1)
-    ldx #0              ; Clear X register
-    rts
-.endproc
-
-;---------------------------------------------------------------------------
-; Library test function
-; uint8_t __fastcall__ libtest(uint8_t value);
-; Input: A = unsigned char value
-; Output: A = value + 5
-; Destroys: A, X
-;---------------------------------------------------------------------------
-.proc _libtest
-    clc                 ; Clear carry for addition
-    adc #$05            ; Add 5 to input value
-    ldx #0              ; Clear X register (cc65 convention for char return)
+    lda found_count     ; Return the count of found UARTs
     rts
 .endproc
 
@@ -160,114 +137,11 @@ irqHandler:
 
 
 ;---------------------------------------------------------------------------
-; Add a UART instance to the global UART instances array
-; uint8_t __fastcall__ addUART(UART_Instance *uart);
-; Input: AX = pointer to UART_Instance (A=low byte, X=high byte)
-; Output: A = 1 if successful, 0 if array is full
-; Destroys: A, X, Y
-;---------------------------------------------------------------------------
-.proc _addUART
-    sta tmp1                        ; Store UART_Instance pointer (low byte)
-    stx tmp2                        ; Store UART_Instance pointer (high byte)
-    
-    lda _uart_instance_count
-    cmp #20
-    bcc @continue                   ; If less than 20, continue
-    jmp @full                       ; Jump to failure (can reach far away)
-@continue:
-    
-    lda _#<uart_instances
-    sta ptr1                        ; Load UART instances array base address (low byte)
-    lda _#>uart_instances
-    sta ptr1+1                      ; Load UART instances array base address (high byte)
-    
-    lda _uart_instance_count
-    asl                             ; Multiply count by 2 for 16-bit pointer storage
-    tay                             ; Use as index into array
-    
-    sei                             ; Disable interrupts while modifying shared data
-    lda tmp1
-    sta (ptr1),y                    ; Store UART_Instance pointer (low byte)
-    iny
-    lda tmp2
-    sta (ptr1),y                    ; Store UART_Instance pointer (high byte)
-    
-    ; Increment the UART instance count
-    lda _uart_instance_count
-    inc
-    sta _uart_instance_count
-    cli                             ; Re-enable interrupts
-    
-    ; TODO: Configure UART hardware with settings from UART_Instance structure
-    ; TODO: Set baud rate divisor, line control register, enable interrupts as needed
-    
-    ; Install IRQ handler if not already running
-    lda _irq_handler_active
-    bne @irq_running
-    jsr addIRQ
-@irq_running:   
-    lda tmp1
-    sta ptr1                        ; Setup pointer to UART_Instance (low byte)
-    lda tmp2
-    sta ptr1+1                      ; Setup pointer to UART_Instance (high byte)
-    
-    ; Get UART base address from UART_Instance
-    ldy #UART_INST_BASE_ADDRESS
-    lda (ptr1),y
-    sta ptr2                        ; Store UART base address (low byte)
-    iny
-    lda (ptr1),y
-    sta ptr2+1                      ; Store UART base address (high byte)
-    
-    ; Get divisor from UART_Instance
-    ldy #UART_INST_DIVISOR
-    lda (ptr1),y
-    sta tmp3                        ; Store divisor (low byte)
-    iny
-    lda (ptr1),y
-    sta tmp4                        ; Store divisor (high byte)
-    sei                             ; Disable interrupts while configuring UART
-    ; Set DLAB to access divisor registers
-    ldy #UART_LCR
-    lda (ptr2),y
-    ora #$80                        ; Set DLAB bit
-    sta (ptr2),y
-    
-    ; Write divisor
-    ldy #UART_DLL
-    lda tmp3
-    sta (ptr2),y                    ; Write Divisor Latch Low Byte
-    iny
-    lda tmp4
-    sta (ptr2),y                    ; Write Divisor Latch High Byte
-    
-    ; Clear DLAB to access normal registers
-    ldy #UART_LCR
-    lda (ptr2),y
-    and #$7F                        ; Clear DLAB bit
-    sta (ptr2),y
-
-    cli                             ; Re-enable interrupts
-    lda #1                          ; Return 1 (success)
-    ldx #0
-    rts
-    
-@full:
-    lda #0                          ; Return 0 (failure - array full)
-    ldx #0
-    rts
-
-;---------------------------------------------------------------------------
 ; Working variables for UART scanning
 ;---------------------------------------------------------------------------
 .segment "DATA"
-
+found_count: .byte 0            ; Count of UARTs found
+loop_count: .byte 0             ; Loop counter
 default_irq_vector: .word 0     ; Storage for the default IRQ vector
 _irq_handler_active: .byte 0    ; Flag: 1 if IRQ handler is active, 0 if not
-
-; Array of pointers to UART_Instance structures (20 entries, 2 bytes each = 40 bytes total)
-_uart_instances: .res 40        ; Reserve 40 bytes for 20 UART instance pointers
-
-; Count of active UART instances
-_uart_instance_count: .byte 0   ; Current number of initialized UARTs
 
