@@ -5,7 +5,7 @@ Serial Drivers for Commander X16 devices using the TL16C2550 and Compatible UART
 This project is currently under active development with significant functionality still to be implemented. The API is not yet stable and may change.
 
 ## Overview
-This library provides serial communication support for the Commander X16 computer using the TL16C2550 dual UART chip. It is designed to be compiled with the cc65 cross-compiler toolchain.
+This library provides serial communication support for the Commander X16 computer using the TL16C2550 dual UART chip. It is designed to be compiled with the cc65 cross-compiler toolchain.   It does not currently integrate with the built in serial functions in cc65.   There is not currently an integration for serial on the cx16 target.   I'm not activly looking into integrating because the x16 does not have dedicated serial and the exisiting serial in cc65 does not apeare to be flexable enough (I could be wrong and may look into this later).   This is targeting the TL16c2550 Uart, but is compatible with others.   This is the UART in use by the Texelec Serail/ESP32 card and midi card.
 
 ## Current Status
 Currently implemented:
