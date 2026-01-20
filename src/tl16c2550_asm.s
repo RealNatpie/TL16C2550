@@ -6,20 +6,22 @@
 ; Exported functions (available to C code)
 ;---------------------------------------------------------------------------
 
-.export _scanUARTs         ; Scan for UART devices
+.export _scanUARTs          ; Scan for UART devices
 .export _libtest            ; Library test function
-.export _irq_handler_active ; Flag indicating if IRQ handler is installed
-.export _addUART          ; Add a UART instance to the global list  
+.export _addUART            ; Add a UART instance to the global list
+.export _tl16c2550_init     ; Startup initialization routine
 ;---------------------------------------------------------------------------
 ; Imported variables (defined in C, used in assembly)
 ;---------------------------------------------------------------------------
-.import _uart_instances     ; Array of UART_Instance pointers
-.import _uart_instance_count ; Count of active UART instances
-;.import chrout              ; KERNAL routine to output character
-;.importzp _sp
 .include "zeropage.inc"
 .include "tl16c2550.inc"
 .include "cx16.inc"
+; Zero page pointers for the IRQ handler
+.zeropage
+_uartPointer:  .res 2        ; Temporary pointer (2 bytes) for IRQ hardware access.
+_uartAddress:  .res 2        ; Temporary storage for UART base address (2 bytes).
+_uartStringP1: .res 2        ; String Pointer1 for IRQ handler use
+_uartStringP2: .res 2        ; String Pointer2 for IRQ handler use
 .segment "CODE"
 
 ;---------------------------------------------------------------------------
@@ -38,14 +40,13 @@
     lda #>UART_BASE     ; Start address high byte
     sta ptr2+1          ; Store in address working variable (zero page pointer)
     
-    stz tmp1     ; Initialize found count (tmp1) to 0
+    stz tmp1            ; Initialize found count (tmp1) to 0
     
     lda #20             ; Loop 20 times (addresses from 9F60 to 9FF8)
-    sta tmp2      ; Initialize loop counter (tmp2)
+    sta tmp2            ; Initialize loop counter (tmp2)
     
 @scan_loop:
-    ;lda #'%'
-    ;jsr $FFD2         ; Debug: Output '%' character to indicate scanning
+ 
     ; Write test value to scratch register (offset 7)
     lda #$A5            ; Test pattern (10100101)
     ldy #7              ; Offset to scratch register
@@ -57,8 +58,7 @@
     bne @skip_address   ; If not equal, skip this address
     
     ; Found a UART! Store the address
-    ;lda #'#'            ; Debug: Load '#' character
-    ;jsr $FFD2         ; Debug: Output character
+   
     
     lda tmp1     ; Get current found count (tmp1)
     asl                 ; Multiply by 2 for 16-bit address storage
@@ -101,6 +101,21 @@
     clc                 ; Clear carry for addition
     adc #$05            ; Add 5 to input value
     ldx #0              ; Clear X register (cc65 convention for char return)
+    rts
+.endproc
+
+;---------------------------------------------------------------------------
+; Library initialization routine (called once at startup)
+; void __fastcall__ _tl16c2550_init(void);
+; Input: None
+; Output: A = 0 if successful, non-zero if IRQ vector is corrupted
+; Destroys: A, X, Y
+;---------------------------------------------------------------------------
+.proc _tl16c2550_init
+    ; Initialize UART instance count to zero
+    stz _uart_instance_count
+    stz _irq_handler_active
+    
     rts
 .endproc
 
@@ -156,6 +171,14 @@ irqHandler:
     ; TODO: Check UART IIR registers to see if UART caused the interrupt
     ; TODO: If UART interrupt, handle it (read/write data to buffers)
     ; Chain to the original IRQ handler to process other interrupt sources
+    ; There are 3 pointers resrved for use exclusivly in the interupt handler
+    ; _uartPointer - used to point to the UART being serviced
+    ; _uartAddress - used to store the base address of the UART being serviced
+    ; _uartIndexPntr - used to index into the uart_instances array
+    ;  but now that I think about it I don't know that I need the instance array, I may
+    ; have been smoking crack when I made that decision.   I'm going to store the base address
+    ;  in _uartAddress and work from there.   So I only need _uartPointer and _uartAddress
+    ;  just thinking outloud here.   
     jmp (default_irq_vector)
 
 
@@ -176,9 +199,9 @@ irqHandler:
     jmp @full                       ; Jump to failure (can reach far away)
 @continue:
     
-    lda _#<uart_instances
+    lda #<_uart_instances
     sta ptr1                        ; Load UART instances array base address (low byte)
-    lda _#>uart_instances
+    lda #>_uart_instances
     sta ptr1+1                      ; Load UART instances array base address (high byte)
     
     lda _uart_instance_count
@@ -188,8 +211,8 @@ irqHandler:
     sei                             ; Disable interrupts while modifying shared data
     lda tmp1
     sta (ptr1),y                    ; Store UART_Instance pointer (low byte)
-    iny
-    lda tmp2
+    iny                             ; Move to high byte 
+    lda tmp2                        ; Get high byte of UART_Instance pointer
     sta (ptr1),y                    ; Store UART_Instance pointer (high byte)
     
     ; Increment the UART instance count
@@ -198,8 +221,7 @@ irqHandler:
     sta _uart_instance_count
     cli                             ; Re-enable interrupts
     
-    ; TODO: Configure UART hardware with settings from UART_Instance structure
-    ; TODO: Set baud rate divisor, line control register, enable interrupts as needed
+  
     
     ; Install IRQ handler if not already running
     lda _irq_handler_active
@@ -219,12 +241,17 @@ irqHandler:
     lda (ptr1),y
     sta ptr2+1                      ; Store UART base address (high byte)
     
+    ;- ---------------------------------------------------------------------------
+    ; ptr1 = UART_Instance pointer
+    ; ptr2 = UART base address
+    ; ---------------------------------------------------------------------------
+
     ; Get divisor from UART_Instance
     ldy #UART_INST_DIVISOR
-    lda (ptr1),y
+    lda (ptr1),y    ; Get divisor (low byte)
     sta tmp3                        ; Store divisor (low byte)
     iny
-    lda (ptr1),y
+    lda (ptr1),y    ; Get divisor (high byte)
     sta tmp4                        ; Store divisor (high byte)
     sei                             ; Disable interrupts while configuring UART
     ; Set DLAB to access divisor registers
@@ -247,8 +274,17 @@ irqHandler:
     and #$7F                        ; Clear DLAB bit
     sta (ptr2),y
 
+    ; copy LCR settings from UART_Instance to UART hardware
+    ldy #UART_INST_LCR
+    lda (ptr1),y                    ; Get LCR from UART_Instance
+    ldy #UART_LCR
+    sta (ptr2),y                    ; Set Line Control Register on hardware
+
+    
+    
     cli                             ; Re-enable interrupts
-    lda #1                          ; Return 1 (success)
+    ; Return success
+    lda _uart_instance_count        ; Return return count as index (success)
     ldx #0
     rts
     
@@ -256,11 +292,16 @@ irqHandler:
     lda #0                          ; Return 0 (failure - array full)
     ldx #0
     rts
+.endproc
 
 ;---------------------------------------------------------------------------
 ; Working variables for UART scanning
 ;---------------------------------------------------------------------------
 .segment "DATA"
+
+.export _irq_handler_active
+.export _uart_instances
+.export _uart_instance_count
 
 default_irq_vector: .word 0     ; Storage for the default IRQ vector
 _irq_handler_active: .byte 0    ; Flag: 1 if IRQ handler is active, 0 if not

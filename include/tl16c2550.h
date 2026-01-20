@@ -44,20 +44,20 @@ typedef enum {
 
 /* UART Instance structure for managing multiple UART ports */
 typedef struct {
-    unsigned int base_address;           /* Base address of the UART */
-    unsigned char *input_buffer;           /* Pointer to input (receive) buffer */
-    unsigned char in_buffer_status;          /* Status of the buffer (e.g., full, empty) */
-    unsigned char *output_buffer;          /* Pointer to output (transmit) buffer */
-    unsigned char out_buffer_status;         /* Status of the buffer (e.g., full, empty) */
-    unsigned char input_head;              /* Head offset for input buffer */
-    unsigned char input_tail;              /* Tail offset for input buffer */
-    unsigned char output_head;             /* Head offset for output buffer */
-    unsigned char output_tail;             /* Tail offset for output buffer */
-    unsigned long crystal_speed;          /* Crystal clock speed divided by 16 */
-    unsigned int divisor;                /* Baud rate divisor value */
-    BaudRate baudrate;               /* Current baud rate setting */
-    unsigned custom_baudrate;        /* Custom baud rate value */
-    unsigned char lcr;                     /* Line Control Register (word length, stop bits, parity) */
+    unsigned int base_address;          /* Base address of the UART */
+    unsigned char *input_buffer;        /* Pointer to input (receive) buffer */
+    unsigned char in_buffer_status;     /* Status of the buffer (e.g., full, empty) */
+    unsigned char *output_buffer;       /* Pointer to output (transmit) buffer */
+    unsigned char out_buffer_status;    /* Status of the buffer (e.g., full, empty) */
+    unsigned char input_head;           /* Head offset for input buffer */
+    unsigned char input_tail;           /* Tail offset for input buffer */
+    unsigned char output_head;          /* Head offset for output buffer */
+    unsigned char output_tail;          /* Tail offset for output buffer */
+    unsigned long crystal_speed;        /* Crystal clock speed divided by 16 */
+    unsigned int divisor;               /* Baud rate divisor value */
+    BaudRate baudrate;                  /* Current baud rate setting */
+    unsigned custom_baudrate;           /* Custom baud rate value */
+    unsigned char lcr;                  /* Line Control Register (word length, stop bits, parity) */
 } UART_Instance;
 
 
@@ -65,7 +65,7 @@ typedef struct {
 /* UART Base Addresses for Commander X16 */
 /* $9F60 through $9FF8 are posible locations seperate by 8 bytes */
 #define UART_BASE   0x9F60
-#define UART_OFSETS 0x08
+#define UART_OFFSETS 0x08
 
 /* Maximum number of UART instances */
 #define MAX_UARTS   20
@@ -121,6 +121,11 @@ typedef struct {
 #define LSR_THR_EMPTY     0x20
 #define LSR_TX_EMPTY      0x40
 #define LSR_FIFO_ERR      0x80
+
+/* Buffer Status Bitmap (in_buffer_status / out_buffer_status fields) */
+#define BUF_EMPTY         0x01  /* Buffer is empty (head == tail) */
+#define BUF_FULL          0x02  /* Buffer is full (head is one position before tail) */
+#define BUF_WRAPPED       0x04  /* Pointer has wrapped around the circular buffer */
 
 /**
  * Calculate UART divisor from crystal clock and desired baud rate
@@ -181,6 +186,13 @@ extern unsigned char uart_instance_count;
 extern unsigned char irq_handler_active;
 
 /**
+ * Library initialization routine
+ * Call this once at program startup to initialize internal state
+ * Clears UART instance count and IRQ handler flag
+ */
+void __fastcall__ _tl16c2550_init(void);
+
+/**
  * Library test function
  * Adds 5 to the input value
  * @param value Input unsigned char value
@@ -188,5 +200,12 @@ extern unsigned char irq_handler_active;
  */
 unsigned char __fastcall__ libtest(unsigned char value);
 
+/**
+ * Add a UART instance to the global list and configure hardware
+ * @param uart Pointer to UART_Instance to add
+ * @return Index of added UART instance, or 0 on failure
+ * this is a private function and does not need to be called publicly
+ * its called by createUART and createUARTWithDivisor
+ */
 unsigned char __fastcall__ addUART(UART_Instance* uart);
 #endif /* TL16C2550_H */
